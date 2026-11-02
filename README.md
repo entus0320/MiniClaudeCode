@@ -1,318 +1,190 @@
 # MiniClaudeCode
 
-MiniClaudeCode is a lightweight Python terminal AI coding assistant inspired by Claude Code.
+使用 Python 构建的终端编程 Agent Runtime，围绕“模型提出工具调用、运行时校验并执行、结果回填后继续推理”组织代码任务。支持文件检索与修改、命令执行、多模型接入，以及会话和上下文管理。
 
-This repository is in Chapter 09: centralized command system. It supports streaming multi-turn chat plus bounded local and MCP tool use, finite ReAct tool loops, provider-neutral prompt modules, runtime context injection, Anthropic prompt caching markers, project-level policy rules, session-level temporary approvals, MCP server tool discovery, OpenAI-compatible fallback rendering, tool-result artifact offloading, automatic context compaction, project/user instruction file loading with safe `@include`, append-only JSONL session persistence with meta-indexed recovery, automatic memory management with LLM-driven note updates, and registry-driven slash commands with help and completion metadata.
+项目用于 Agent 工程学习与实践。功能说明以仓库代码为依据，不代表已通过生产环境验证。
 
-## Current Status
+## 核心能力
 
-Implemented:
+- **模型与交互**：通过 Provider 抽象接入 Anthropic、OpenAI 与 OpenAI 兼容接口；使用 Textual 展示流式文本、工具调用和确认提示。
+- **有限 Agent 循环**：支持多轮工具调用、结果回填、取消与失败反馈；默认轮数预算为 20，达到上限后进行无工具总结。
+- **工具系统**：统一工具注册、参数处理与执行结果；允许符合条件的只读工具分组并发，其他工具按执行顺序处理。
+- **MCP Client**：支持 `stdio` 与 `streamable_http`，完成初始化、工具发现和调用，复用连接并进行有界重连。
+- **上下文管理**：按预算将超长工具结果落盘并保留预览，支持自动历史压缩与手动 `/compact`。
+- **会话与记忆**：追加式 JSONL 会话持久化与恢复；通过用户级、项目级笔记保存跨会话信息。
+- **扩展机制**：包含指令文件加载、Skills、Hooks、SubAgent、后台任务、Agent Teams 和 Git Worktree 管理模块。部分功能需要配置及外部环境支持。
 
-- Python `src/` package layout in [src/miniclaudecode/](src/miniclaudecode/)
-- YAML configuration loading from [config.example.yaml](config.example.yaml)
-- credential loading through `.env` variable names from [.env.example](.env.example)
-- provider-neutral in-memory conversation history
-- Provider abstraction for pure text streaming and tool-aware turns
-- Anthropic Claude provider using the official Anthropic Python SDK
-- OpenAI / OpenAI-compatible provider using the official OpenAI Python SDK
-- Provider factory based on `active_provider` and `protocol`
-- Prompt assembly system with stable global modules, runtime context blocks, and dynamic system reminders
-- Anthropic prompt caching markers for stable tool definitions and stable prompt blocks plus provider-normalized cache usage parsing
-- OpenAI-compatible prompt fallback that renders assembled prompts as a standard system message without Claude-style cache fields
-- Textual TUI with message history, input area, provider/model status, mode-aware status hints, streaming output, registry-driven slash commands, and best-effort interruption
-- Chapter 02 tool system with six local tools:
-  - `read_file`
-  - `write_file`
-  - `edit_file`
-  - `run_command`
-  - `glob_files`
-  - `grep_content`
-- Finite ReAct Agent Loop with a default 20-round tool-enabled limit plus one no-tool final synthesis when the limit is reached
-- Multiple sequential tool rounds for workflows such as search → read → summarize
-- Agent event stream for model text deltas, tool calls, tool results, final replies, errors, cancellation, and max-round termination
-- Agent-level plan-only option that allows read tools and blocks write/edit/command tools before execution; this is a foundation, not a full TUI/CLI productized approval mode yet
-- Policy engine for tool execution decisions: `allow`, `ask`, and `deny`
-- Project-level policy loading from optional `miniclaudecode.policy.yaml`
-- Session-level temporary approvals through `/allow-session`
-- MCP JSON-RPC tool clients with `stdio` and `streamable_http` transports
-- MCP server lifecycle support for `initialize`, `tools/list`, and `tools/call`
-- MCP tool registration using `server_name__tool_name` names and the existing `Tool` interface
-- Connection reuse plus bounded reconnect/retry behavior for MCP servers
-- Planned concurrency-safe Agent Loop execution for local read tools and MCP `safe_tools`
-- Confirmation gate for tools that need approval: `write_file`, `edit_file`, `run_command`, and MCP tools
-- Workspace path protection for local file tools
-- Dangerous command detection for destructive shell commands, remote script execution, force push, and publishing commands
-- CLI entry point: `miniclaudecode`
-- fake/mock tests for session, providers, tools, CLI, TUI, and streaming/tool-flow behavior
-- Context management with tool-result artifact offloading and automatic structured summarization
-- `/compact` manual compaction command with safe message-group boundaries
-- Project and user instruction file loading with priority-based ordering
-- Safe `@include` directive for modular instruction files with depth limits and path sandboxing
-- Append-only JSONL session transcript storage with per-session meta index
-- Session recovery with bad-line skipping, incomplete-tool-group truncation, and time-gap notices
-- Automatic memory management: user-level and project-level notes updated by LLM every N turns, on `/notes-save`, and on exit
-- TUI commands for session inspection (`/session`, `/sessions`, `/resume`) and memory control (`/notes`, `/notes-path`, `/notes-save`)
-- Centralized slash command registry with command metadata, aliases, conflict detection, `/help`, unknown-command guidance, and Tab completion
+## 运行流程
 
-Still not implemented:
+```text
+用户输入 → Session 保存消息 → Provider 调用模型
+                                  │
+                      ┌───────────┴───────────┐
+                      │                       │
+                   文本回答                工具调用请求
+                      │                       │
+                    结束              权限与参数检查
+                                              │
+                                           执行工具
+                                              │
+                                 调用及结果写入 Session
+                                              │
+                                       进入下一轮模型调用
+```
 
-- unlimited autonomous Agent loop
-- complex autonomous planning beyond the bounded ReAct tool loop
-- parallel execution for side-effecting tools
-- complete MCP protocol coverage beyond MCP tool discovery and calls
-- complex patch/diff application
-- project indexing, semantic retrieval, or RAG
-- user-global permission policy files
-- permanent `/allow-always` policy writes
-- OS-level command sandbox isolation
-- cross-project workspace access
-- automatic git commit, git push, or publishing
+核心实现见 [AgentRunner](src/miniclaudecode/agent.py)、[Session](src/miniclaudecode/session.py) 和 [Provider 接口](src/miniclaudecode/providers/base.py)。
 
-## Requirements
+## 快速开始
 
-- Python 3.11+
+需要 Python 3.11+。使用 Worktree 功能时还需要 Git 和可用的 Git 工作仓库。
 
-## Install for Local Development
+### 1. 获取并安装
+
+```bash
+git clone https://github.com/entus0320/MiniClaudeCode.git
+cd MiniClaudeCode
+python -m venv .venv
+```
+
+激活虚拟环境：
+
+```powershell
+# Windows PowerShell
+.\.venv\Scripts\Activate.ps1
+```
+
+```bash
+# macOS / Linux
+source .venv/bin/activate
+```
+
+安装项目：
 
 ```bash
 python -m pip install -e .
 ```
 
-In this workspace, the local virtual environment is [minicode/](minicode/), so commands can also be run with:
+### 2. 创建本地配置
 
-```bash
-./minicode/Scripts/python -m pip install -e .
+Windows PowerShell：
+
+```powershell
+Copy-Item config.example.yaml config.yaml
+Copy-Item .env.example .env
 ```
 
-## Configuration
-
-Copy the example files:
+macOS / Linux：
 
 ```bash
 cp config.example.yaml config.yaml
 cp .env.example .env
 ```
 
-Fill only the environment variable value for the provider you want to use:
+在 `config.yaml` 中选择 `active_provider`，并把对应 Provider 的 `model` 改为账号实际可用的模型。示例模型名称不保证对所有服务可用。
+
+在本地 `.env` 中填写所选服务的凭据：
 
 ```dotenv
 ANTHROPIC_API_KEY=
 OPENAI_API_KEY=
 ```
 
-Do not put real API keys in source files, YAML examples, logs, tests, or commits.
+使用 OpenAI 兼容服务时，选择 `active_provider: openai-compatible`，配置其 `base_url` 和 `model`，并设置 `OPENAI_API_KEY`。服务需要支持流式 Chat Completions；工具模式还要求支持工具调用及流式工具参数。
 
-### Project policy
+完整配置见 [config.example.yaml](config.example.yaml)。实际凭据、`config.yaml` 和运行状态文件应保留在本地。
 
-MiniClaudeCode optionally reads a project-level `miniclaudecode.policy.yaml` from the startup working directory. See [miniclaudecode.policy.example.yaml](miniclaudecode.policy.example.yaml) for the supported shape.
+### 3. 启动
 
-Policy decisions are:
-
-- `allow`: execute the tool call
-- `ask`: pause for user approval
-- `deny`: reject before execution
-
-Supported modes are:
-
-- `strict`: safe reads are allowed after sandbox checks; writes, edits, and commands ask by default
-- `default`: safe reads are allowed; writes, edits, and commands ask by default
-- `permissive`: ordinary writes, edits, and commands can run without asking, but hard safety boundaries still deny
-
-Hard boundaries cannot be bypassed by permissive mode, project rules, or session approvals: workspace escape, sensitive files, project policy file writes, and clearly dangerous commands are denied before execution.
-
-Chapter 05 only reads project policy files. It does not implement user-global policy files, `/allow-always`, or permanent policy writes.
-
-### MCP servers
-
-MiniClaudeCode can optionally read `mcp_servers` from `config.yaml` and discover MCP tools over JSON-RPC 2.0.
-
-Supported transports:
-
-- `stdio`: starts a local subprocess and exchanges line-delimited JSON-RPC messages through stdin/stdout
-- `streamable_http`: sends JSON-RPC requests to an HTTP endpoint and accepts JSON or simple `data: {...}` stream responses
-
-Supported lifecycle methods are `initialize`, `tools/list`, and `tools/call`. Discovered tools are registered with a server prefix, for example `fake__echo`, and are exposed through the same `Tool` interface as local tools.
-
-MCP tools are conservative by default: they require confirmation and still go through the existing `PolicyEngine`. The `safe_tools` config only controls whether a disconnected in-flight `tools/call` may be retried after reconnect and whether that MCP tool is eligible for concurrency-safe batch execution; it does not grant permission to execute the tool.
-
-MCP server config may include `install_command` and `documentation_url`. These are shown as user guidance only. MiniClaudeCode does not automatically run install commands, download tools, or modify the environment.
-
-Connection recovery is bounded. MiniClaudeCode can restart a broken stdio server or reconnect an HTTP server, then rerun `initialize` and `tools/list`. Unsafe in-flight tool calls are not replayed after a disconnect, to avoid duplicate side effects.
-
-Chapter 06 does not implement the full MCP protocol, OAuth, automatic third-party server installation, server-to-client tool calls, side-effecting tool parallelism, or cross-session persistent connections.
-
-### Anthropic
-
-Use `active_provider: anthropic` in `config.yaml`. The default example model is `claude-opus-4-8`.
-
-Claude thinking is configured under the Anthropic provider. It is disabled by default. When enabled, MiniClaudeCode requests adaptive thinking and still only displays final text deltas in the TUI.
-
-### OpenAI-compatible
-
-Use `active_provider: openai-compatible`, then set:
-
-```yaml
-base_url: https://your-compatible-endpoint.example/v1
-model: your-compatible-model
-```
-
-Pure chat requires OpenAI Chat Completions streaming compatibility. Tool calling additionally requires the compatible service to support Chat Completions tool calling and streaming `tool_calls` deltas.
-
-## Tool System
-
-MiniClaudeCode exposes six built-in tools to the active model:
-
-| Tool | Purpose | Confirmation |
-| --- | --- | --- |
-| `read_file` | Read a UTF-8 text file inside the project workspace | No |
-| `glob_files` | Find files by a glob pattern inside the project workspace | No |
-| `grep_content` | Search UTF-8 text files with a regular expression | No |
-| `write_file` | Write a UTF-8 file inside the project workspace | Yes |
-| `edit_file` | Replace one unique old text string in a file | Yes |
-| `run_command` | Run a shell command in the project workspace | Yes |
-
-Tool safety boundaries:
-
-- file paths are restricted to the startup working directory
-- `.env`, `.env.*`, `config.yaml`, private key files such as `*.pem` and `*.key`, and ignored local environment directories are treated as sensitive local paths
-- `miniclaudecode.policy.yaml` may be read as project configuration but cannot be written or edited through tools
-- `write_file`, `edit_file`, and `run_command` ask for confirmation in the default permission mode
-- command execution has a timeout and captures stdout, stderr, and exit code
-- clearly dangerous commands such as destructive deletion, remote script download-and-execute, `git push --force`, and `npm publish` are denied before execution
-- the finite Agent Loop allows multiple sequential tool rounds and stops executing tools after 20 tool-enabled ReAct rounds by default
-- when the tool round limit is reached, MiniClaudeCode performs one no-tool final synthesis: it answers from existing information when possible, or states that current information is insufficient
-- the Agent-level plan-only option adds a dynamic system reminder, allows read tools, and blocks write/edit/command tools before execution, but it does not yet expose a full TUI/CLI approval workflow
-- stable prompt modules and tool descriptions reinforce key rules such as preferring dedicated file/search tools over shell commands and reading files before editing
-
-Inside the TUI, when a tool asks for confirmation, choose from the menu:
-
-- `1. Yes` to execute it once
-- `2. Yes, and don't ask again for this pattern` to allow the same kind of call for the current process session
-- `3. No` to reject it
-- type `/interrupt` or press Ctrl+C for best-effort interruption
-
-Legacy `/allow`, `/allow-session`, and `/deny` commands are still accepted for compatibility. Session approvals are in-memory only. They are not written to `miniclaudecode.policy.yaml` and cannot override hard denies.
-
-## Run
-
-After installing in editable mode:
+在已配置的项目目录运行：
 
 ```bash
 miniclaudecode
 ```
 
-Or without relying on the console script:
+示例任务：
+
+- “读取 README.md，概括项目结构。”
+- “搜索 AgentRunner 的定义，解释一次工具调用的执行流程。”
+
+文件工具以启动时的工作目录为访问边界。写入、修改和命令执行在默认策略下需要确认；取消属于尽力中断，不保证撤销已经发生的操作。
+
+## 内置工具
+
+| 工具 | 用途 |
+| --- | --- |
+| `read_file` | 读取文本文件 |
+| `glob_files` | 按模式查找文件 |
+| `grep_content` | 按正则表达式搜索内容 |
+| `write_file` | 写入文件 |
+| `edit_file` | 精确替换文件中的指定文本 |
+| `run_command` | 执行命令并收集输出、退出码和超时信息 |
+
+实现见 [tools/](src/miniclaudecode/tools/)。
+
+## 常用命令
+
+| 命令 | 用途 |
+| --- | --- |
+| `/help` | 查看命令及用法 |
+| `/interrupt` | 请求中断当前生成 |
+| `/compact` | 手动压缩上下文 |
+| `/session`、`/sessions` | 查看当前及近期会话 |
+| `/resume <session_id>` | 恢复指定会话 |
+| `/notes`、`/notes-path`、`/notes-save` | 查看及保存记忆笔记 |
+| `/exit` | 退出 |
+
+命令注册表提供帮助和补全信息；条件启用的模块可能注册额外命令，以运行时 `/help` 为准。
+
+## MCP、SubAgent 与 Worktree
+
+MCP 配置示例位于 `config.example.yaml` 的 `mcp_servers` 部分。敏感环境变量和请求头可通过 `env_from`、`headers_env` 引用。发现的工具使用服务器名前缀注册，并纳入权限检查。
+
+`safe_tools` 用于标识可参与安全并发或断线重试的工具，不等于授予执行权限。对未标记为安全的在途调用，不在断线后自动重放，以避免重复副作用。
+
+SubAgent 通过独立 Session、工具过滤及任务状态管理执行子任务。Worktree 模块可为相关任务提供独立 Git 工作目录；团队模块包含进程内、tmux 和 iTerm2 后端，其可用性依赖平台和配置。实现分别见 [subagents/](src/miniclaudecode/subagents/)、[worktrees/](src/miniclaudecode/worktrees/) 和 [teams/](src/miniclaudecode/teams/)。
+
+## 权限与限制
+
+策略引擎提供 `allow / ask / deny`，支持项目策略和会话内临时授权，策略示例见 [miniclaudecode.policy.example.yaml](miniclaudecode.policy.example.yaml)。
+
+代码包含文件路径边界检查、敏感文件保护与危险命令检测。这些属于应用层限制，**不是操作系统级沙箱，也不保证拦截所有危险命令或提示词注入**。执行命令时仍使用本机权限；Git Worktree 也不是进程或网络安全隔离。
+
+当前边界还包括：
+
+- 有限轮数工具循环，不保证任意长任务自动完成。
+- MCP 主要覆盖工具发现与调用，不宣称完整协议或 OAuth 支持。
+- 没有代码库语义索引或 RAG。
+- 记忆和摘要由模型生成，可能遗漏或错误概括信息。
+- 仓库包含相关模块及测试，不代表所有平台、后端或真实 API 组合均已验证。
+
+## 测试
+
+安装项目依赖后，可使用标准库 unittest 运行：
 
 ```bash
-PYTHONPATH=src python -m miniclaudecode.cli
+# 单元测试
+python -m unittest discover -s tests -p "test_*.py"
+
+# 单独发现 tests/e2e 下的模拟流程测试
+python -m unittest discover -s tests/e2e -p "test_*.py"
 ```
 
-Inside the TUI:
+[tests/](tests/) 包含模型适配、工具执行、权限、上下文、会话、MCP、SubAgent、团队及 Worktree 等测试。模拟流程测试使用脚本化 Provider，不能替代真实模型、外部 MCP 服务和平台兼容性验收。本文不提供未经实际运行核验的测试通过率或覆盖率。
 
-- type a message and press Enter to chat
-- type `/help` to list local commands
-- type `/exit` to exit with code 0
-- type `/interrupt` or press Ctrl+C during generation for best-effort interruption
-- type a command prefix such as `/comp` and press Tab for command completion
-- choose `1. Yes`, `2. Yes, and don't ask again for this pattern`, or `3. No` when a tool confirmation is pending
+## 代码导航
 
-Conversation history is stored in append-only JSONL session transcripts when session persistence is enabled.
+| 路径 | 职责 |
+| --- | --- |
+| [cli.py](src/miniclaudecode/cli.py) / [tui.py](src/miniclaudecode/tui.py) | 启动装配与终端交互 |
+| [agent.py](src/miniclaudecode/agent.py) | Agent 循环与事件流 |
+| [providers/](src/miniclaudecode/providers/) | 模型适配 |
+| [tools/](src/miniclaudecode/tools/) / [policy.py](src/miniclaudecode/policy.py) | 工具与权限 |
+| [context.py](src/miniclaudecode/context.py) | 结果卸载与上下文压缩 |
+| [session.py](src/miniclaudecode/session.py) / [session_store.py](src/miniclaudecode/session_store.py) | 消息历史与持久化 |
+| [memory.py](src/miniclaudecode/memory.py) | 记忆笔记 |
+| [mcp/](src/miniclaudecode/mcp/) | MCP 连接与工具适配 |
+| [skills/](src/miniclaudecode/skills/) / [hooks/](src/miniclaudecode/hooks/) | 扩展加载与生命周期事件 |
 
-## Verify
+## 相关学习资料
 
-Compile source files:
-
-```bash
-PYTHONPATH=src ./minicode/Scripts/python -m compileall src/miniclaudecode
-```
-
-Run the unit and fake e2e tests with the standard library test runner:
-
-```bash
-PYTHONPATH=src ./minicode/Scripts/python -m unittest discover -s tests
-```
-
-Check importability:
-
-```bash
-PYTHONPATH=src ./minicode/Scripts/python -c "from miniclaudecode.cli import main; print(callable(main))"
-```
-
-Safety checks:
-
-```bash
-grep -r "sk-ant\|sk-proj\|sk-" src tests docs config.example.yaml README.md
-grep -r "api_key" src
-```
-
-The `api_key` check may show SDK parameter names such as `api_key=config.credential`; it must not show hardcoded secret values. The first check may also show the grep pattern itself in documentation; it must not show real secret values.
-
-## Manual Real API Acceptance
-
-These checks require local credentials and network access. They are not part of the default automated tests.
-
-### Anthropic tool calling
-
-1. Copy [config.example.yaml](config.example.yaml) to `config.yaml`.
-2. Copy [.env.example](.env.example) to `.env`.
-3. Set `active_provider: anthropic` in `config.yaml`.
-4. Set `ANTHROPIC_API_KEY` in `.env`.
-5. Run `miniclaudecode`.
-6. Input `搜索 README.md 并总结项目当前状态`.
-7. Confirm that one or more tool calls are shown and the final answer summarizes README content.
-8. Input `/exit` and confirm normal exit.
-
-### Anthropic prompt caching
-
-1. Use the Anthropic setup above.
-2. Run two similar requests whose stable prompt and tool list are unchanged.
-3. Inspect the normalized provider usage in debug/test instrumentation or provider events.
-4. Anthropic requests keep tool definitions in `tools`, stable prompt and runtime context in `system`, and conversation history in `messages`.
-5. Cache breakpoints are placed on the last tool definition and the last stable system block; runtime context and system reminders remain after the stable breakpoint without cache markers.
-6. On a large enough stable prefix, the first request may report `cache_creation_input_tokens > 0`; a later matching request may report `cache_read_input_tokens > 0`.
-7. If both cache fields stay empty or zero, check that dynamic data such as date, working directory, Git status, and runtime reminders are not mixed into stable prompt blocks.
-
-OpenAI-compatible providers ignore Claude-style cache markers. They receive the assembled prompt as a regular system message and do not promise prompt cache statistics.
-
-### OpenAI-compatible tool calling
-
-1. Set `active_provider: openai-compatible` in `config.yaml`.
-2. Set the compatible provider `base_url` and `model`.
-3. Set `OPENAI_API_KEY` in `.env`.
-4. Confirm the compatible backend supports Chat Completions tool calling.
-5. Run `miniclaudecode`.
-6. Input `找到 MiniClaudeCodeApp 定义并读取相关文件`.
-7. Confirm that one or more tool calls are shown and the final answer references the matching file path.
-8. Input `/exit` and confirm normal exit.
-
-## Chapter Documents
-
-See:
-
-- [docs/ch01/spec.md](docs/ch01/spec.md)
-- [docs/ch01/tasks.md](docs/ch01/tasks.md)
-- [docs/ch01/checklist.md](docs/ch01/checklist.md)
-- [docs/ch02/spec.md](docs/ch02/spec.md)
-- [docs/ch02/tasks.md](docs/ch02/tasks.md)
-- [docs/ch02/checklist.md](docs/ch02/checklist.md)
-- [docs/ch03/spec.md](docs/ch03/spec.md)
-- [docs/ch03/tasks.md](docs/ch03/tasks.md)
-- [docs/ch03/checklist.md](docs/ch03/checklist.md)
-- [docs/ch04/spec.md](docs/ch04/spec.md)
-- [docs/ch04/tasks.md](docs/ch04/tasks.md)
-- [docs/ch04/checklist.md](docs/ch04/checklist.md)
-- [docs/ch05/spec.md](docs/ch05/spec.md)
-- [docs/ch05/tasks.md](docs/ch05/tasks.md)
-- [docs/ch05/checklist.md](docs/ch05/checklist.md)
-- [docs/ch06/spec.md](docs/ch06/spec.md)
-- [docs/ch06/tasks.md](docs/ch06/tasks.md)
-- [docs/ch06/checklist.md](docs/ch06/checklist.md)
-- [docs/ch07/spec.md](docs/ch07/spec.md)
-- [docs/ch07/tasks.md](docs/ch07/tasks.md)
-- [docs/ch07/checklist.md](docs/ch07/checklist.md)
-- [docs/ch08/spec.md](docs/ch08/spec.md)
-- [docs/ch08/tasks.md](docs/ch08/tasks.md)
-- [docs/ch08/checklist.md](docs/ch08/checklist.md)
-- [docs/ch09/spec.md](docs/ch09/spec.md)
-- [docs/ch09/tasks.md](docs/ch09/tasks.md)
-- [docs/ch09/checklist.md](docs/ch09/checklist.md)
+[learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) 提供按机制拆解的编程 Agent 教程，可用于对照学习工具循环、上下文管理与多 Agent。本项目的目录及章节编号不与该教程一一对应。
