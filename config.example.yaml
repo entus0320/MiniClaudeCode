@@ -1,0 +1,89 @@
+active_provider: anthropic
+
+providers:
+  anthropic:
+    protocol: anthropic
+    model: claude-opus-4-8
+    credential_env: ANTHROPIC_API_KEY
+    thinking:
+      enabled: false
+      effort: high
+      display: omitted
+
+  openai:
+    protocol: openai
+    model: gpt-5
+    credential_env: OPENAI_API_KEY
+
+  openai-compatible:
+    protocol: openai-compatible
+    model: your-compatible-model
+    base_url: https://api.example.com/v1
+    credential_env: OPENAI_API_KEY
+
+mcp_servers: []
+
+instructions:
+  enabled: true
+  project_file: MiniClaudeCode.md
+  user_file: ~/.miniclaudecode/CLAUDE.md
+  max_include_depth: 3
+
+sessions:
+  enabled: true
+  dir: .miniclaudecode/sessions
+  inactivity_notice_hours: 6
+
+memory:
+  enabled: true
+  user_dir: ~/.miniclaudecode/memory
+  project_dir: .miniclaudecode/memory
+  auto_every_turns: 10
+  recent_messages: 20
+
+context_management:
+  enabled: true
+  artifact_dir: .miniclaudecode/context
+  single_tool_result_token_limit: 8000
+  tool_result_batch_token_limit: 24000
+  tool_result_preview_chars: 2000
+  compact_trigger_ratio: 0.8
+  compact_target_ratio: 0.45
+  # Set this to your model's real context window when the provider cannot report it.
+  context_window_tokens: null
+  # Used when both context_window_tokens and provider-reported window are unavailable.
+  fallback_context_window_tokens: 128000
+  recent_message_groups_to_keep: 6
+  max_auto_compact_failures: 3
+
+# Example MCP servers. Uncomment and adjust when needed.
+# Sensitive values should be referenced through env_from or headers_env.
+# install_command is shown as guidance only; MiniClaudeCode does not run it automatically.
+# safe_tools controls reconnect retry and parallel execution eligibility, not permission to execute.
+#
+# mcp_servers:
+#   - name: fake
+#     transport: stdio
+#     command: python
+#     args: ["-m", "example_mcp_server"]
+#     timeout_seconds: 5
+#     max_reconnect_attempts: 1
+#     install_command: "python -m pip install example-mcp-server"
+#     documentation_url: "https://example.com/mcp/fake"
+#     env:
+#       MINI_MODE: demo
+#     env_from:
+#       SERVICE_TOKEN: SERVICE_TOKEN
+#     safe_tools:
+#       - echo
+#
+#   - name: remote
+#     transport: streamable_http
+#     url: https://tools.example.com/rpc
+#     timeout_seconds: 5
+#     max_reconnect_attempts: 1
+#     documentation_url: "https://example.com/mcp/remote"
+#     headers_env:
+#       Authorization: TOOLS_AUTH_HEADER
+#     safe_tools:
+#       - search

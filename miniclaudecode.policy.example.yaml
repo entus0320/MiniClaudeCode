@@ -1,0 +1,24 @@
+# Optional project-level MiniClaudeCode policy.
+# Copy to miniclaudecode.policy.yaml if this project needs explicit tool rules.
+# This file is read at startup. MiniClaudeCode does not write policy files in Chapter 05.
+
+mode: default
+
+rules:
+  - name: allow-readme
+    tool: read_file
+    path: README.md
+    action: allow
+    reason: README is safe to read without asking.
+
+  - name: confirm-unittest
+    tool: run_command
+    command_contains: "python -m unittest"
+    action: ask
+    reason: Test commands are allowed after confirmation.
+
+  - name: deny-force-push
+    tool: run_command
+    command_regex: "git\\s+push\\b.*(--force|-f)"
+    action: deny
+    reason: Force push is not allowed by this project policy.

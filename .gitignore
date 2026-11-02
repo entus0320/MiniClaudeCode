@@ -1,0 +1,54 @@
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+config.yaml
+MiniClaudeCode.md
+# Python virtual environments
+.venv/
+venv/
+env/
+minicode/
+nimicode/
+
+# Python cache/build outputs
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# IDE and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+#docs
+docs/
+
+ctx_out.txt
+
+.miniclaudecode
+
+# Private local state and credentials
+.tmp/
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+*.sqlite
+*.sqlite3
+*.db
+miniclaudecode.policy.yaml
+settings.local.json
+temp_agent_snippet.txt
+witness.txt
+
