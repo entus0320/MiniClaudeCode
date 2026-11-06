@@ -184,7 +184,3 @@ python -m unittest discover -s tests/e2e -p "test_*.py"
 | [memory.py](src/miniclaudecode/memory.py) | 记忆笔记 |
 | [mcp/](src/miniclaudecode/mcp/) | MCP 连接与工具适配 |
 | [skills/](src/miniclaudecode/skills/) / [hooks/](src/miniclaudecode/hooks/) | 扩展加载与生命周期事件 |
-
-## 相关学习资料
-
-[learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) 提供按机制拆解的编程 Agent 教程，可用于对照学习工具循环、上下文管理与多 Agent。本项目的目录及章节编号不与该教程一一对应。
